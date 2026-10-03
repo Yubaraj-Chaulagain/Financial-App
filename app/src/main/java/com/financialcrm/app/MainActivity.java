@@ -11,7 +11,6 @@ import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.MediaStore;
 import android.view.View;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -53,7 +52,7 @@ public class MainActivity extends Activity {
         offlineView = findViewById(R.id.offlineView);
         retryButton = findViewById(R.id.retryButton);
 
-        // Ask Camera + File/Photo permission
+        // Request Camera + Photo/File permission
         requestAppPermissions();
 
         WebSettings settings = webView.getSettings();
@@ -73,7 +72,7 @@ public class MainActivity extends Activity {
 
         settings.setSupportMultipleWindows(false);
 
-        // Camera / microphone support
+        // Camera / media support
         settings.setMediaPlaybackRequiresUserGesture(false);
 
         webView.setWebViewClient(new WebViewClient() {
@@ -122,7 +121,6 @@ public class MainActivity extends Activity {
                     WebResourceRequest request,
                     WebResourceError error) {
 
-                // Only show offline screen for main page
                 if (request.isForMainFrame()) {
 
                     progress.setVisibility(View.GONE);
@@ -135,19 +133,18 @@ public class MainActivity extends Activity {
 
         webView.setWebChromeClient(new WebChromeClient() {
 
-            /**
-             * Website camera permission
-             */
+            // Website camera/microphone permission
             @Override
             public void onPermissionRequest(
                     android.webkit.PermissionRequest request) {
 
                 runOnUiThread(() -> {
 
-                    String[] resources = request.getResources();
-
                     ArrayList<String> allowedResources =
                             new ArrayList<>();
+
+                    String[] resources =
+                            request.getResources();
 
                     for (String resource : resources) {
 
@@ -155,7 +152,13 @@ public class MainActivity extends Activity {
                                 .RESOURCE_VIDEO_CAPTURE
                                 .equals(resource)) {
 
-                            allowedResources.add(resource);
+                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                                    checkSelfPermission(
+                                            Manifest.permission.CAMERA)
+                                            == PackageManager.PERMISSION_GRANTED) {
+
+                                allowedResources.add(resource);
+                            }
                         }
 
                         if (android.webkit.PermissionRequest
@@ -175,18 +178,17 @@ public class MainActivity extends Activity {
                         );
 
                     } else {
+
                         request.deny();
                     }
                 });
             }
 
-            /**
-             * HTML file/image upload
-             */
+            // HTML file/photo chooser
             @Override
             public boolean onShowFileChooser(
                     WebView webView,
-                    ValueCallback<Uri[]> filePathCallback,
+                    ValueCallback<Uri[]> callback,
                     FileChooserParams fileChooserParams) {
 
                 if (MainActivity.this.filePathCallback != null) {
@@ -195,8 +197,7 @@ public class MainActivity extends Activity {
                             .onReceiveValue(null);
                 }
 
-                MainActivity.this.filePathCallback =
-                        filePathCallback;
+                MainActivity.this.filePathCallback = callback;
 
                 try {
 
@@ -242,15 +243,16 @@ public class MainActivity extends Activity {
         loadApp();
     }
 
-    /**
-     * Camera + Photo/File permissions
-     */
+    // ============================================================
+    // CAMERA + PHOTO/FILE PERMISSIONS
+    // ============================================================
+
     private void requestAppPermissions() {
 
         ArrayList<String> permissions =
                 new ArrayList<>();
 
-        // Camera
+        // Camera permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
 
             if (checkSelfPermission(
@@ -276,11 +278,10 @@ public class MainActivity extends Activity {
                 );
             }
 
-        }
-        // Android 12 and below
-        else if (Build.VERSION.SDK_INT >=
+        } else if (Build.VERSION.SDK_INT >=
                 Build.VERSION_CODES.M) {
 
+            // Android 12 and below
             if (checkSelfPermission(
                     Manifest.permission.READ_EXTERNAL_STORAGE)
                     != PackageManager.PERMISSION_GRANTED) {
@@ -302,9 +303,10 @@ public class MainActivity extends Activity {
         }
     }
 
-    /**
-     * Permission result
-     */
+    // ============================================================
+    // PERMISSION RESULT
+    // ============================================================
+
     @Override
     public void onRequestPermissionsResult(
             int requestCode,
@@ -343,9 +345,10 @@ public class MainActivity extends Activity {
         }
     }
 
-    /**
-     * File chooser result
-     */
+    // ============================================================
+    // FILE CHOOSER RESULT
+    // ============================================================
+
     @Override
     protected void onActivityResult(
             int requestCode,
@@ -367,37 +370,34 @@ public class MainActivity extends Activity {
 
             Uri[] results = null;
 
-            if (resultCode == RESULT_OK) {
+            if (resultCode == RESULT_OK &&
+                    data != null) {
 
-                if (data != null) {
+                // Single file/photo
+                if (data.getData() != null) {
 
-                    String dataString =
-                            data.getDataString();
+                    results = new Uri[]{
+                            data.getData()
+                    };
 
-                    if (dataString != null) {
+                }
+                // Multiple files/photos
+                else if (data.getClipData() != null) {
 
-                        results = new Uri[]{
-                                Uri.parse(dataString)
-                        };
+                    int count =
+                            data.getClipData()
+                                    .getItemCount();
 
-                    } else if (data.getClipData() != null) {
+                    results = new Uri[count];
 
-                        int count =
+                    for (int i = 0;
+                         i < count;
+                         i++) {
+
+                        results[i] =
                                 data.getClipData()
-                                        .getItemCount();
-
-                        results =
-                                new Uri[count];
-
-                        for (int i = 0;
-                             i < count;
-                             i++) {
-
-                            results[i] =
-                                    data.getClipData()
-                                            .getItemAt(i)
-                                            .getUri();
-                        }
+                                        .getItemAt(i)
+                                        .getUri();
                     }
                 }
             }
@@ -408,9 +408,10 @@ public class MainActivity extends Activity {
         }
     }
 
-    /**
-     * Load website only when Internet exists
-     */
+    // ============================================================
+    // LOAD APP
+    // ============================================================
+
     private void loadApp() {
 
         if (!hasInternetConnection()) {
@@ -426,9 +427,10 @@ public class MainActivity extends Activity {
         webView.loadUrl(APP_URL);
     }
 
-    /**
-     * Check Internet connection
-     */
+    // ============================================================
+    // INTERNET CHECK
+    // ============================================================
+
     private boolean hasInternetConnection() {
 
         ConnectivityManager connectivityManager =
@@ -437,4 +439,59 @@ public class MainActivity extends Activity {
                                 CONNECTIVITY_SERVICE
                         );
 
-        if (
+        if (connectivityManager == null) {
+            return false;
+        }
+
+        Network network =
+                connectivityManager.getActiveNetwork();
+
+        if (network == null) {
+            return false;
+        }
+
+        NetworkCapabilities capabilities =
+                connectivityManager
+                        .getNetworkCapabilities(network);
+
+        if (capabilities == null) {
+            return false;
+        }
+
+        return capabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_INTERNET
+        );
+    }
+
+    // ============================================================
+    // OFFLINE SCREEN
+    // ============================================================
+
+    private void showOfflineMessage() {
+
+        progress.setVisibility(View.GONE);
+
+        webView.setVisibility(View.GONE);
+
+        offlineView.setVisibility(View.VISIBLE);
+    }
+
+    // ============================================================
+    // BACK BUTTON
+    // ============================================================
+
+    @Override
+    public void onBackPressed() {
+
+        if (webView.getVisibility() ==
+                View.VISIBLE &&
+                webView.canGoBack()) {
+
+            webView.goBack();
+
+        } else {
+
+            super.onBackPressed();
+        }
+    }
+}
